@@ -1,0 +1,19 @@
+# Node.js
+node_modules
+
+# IDEs
+.idea
+.vscode
+
+# Logs
+logs
+
+# Secrets
+.env
+
+# Build
+build
+
+# System Files
+.DS_Store
+Thumbs.db
