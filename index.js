@@ -1,7 +1,47 @@
 import { Client } from "@googlemaps/google-maps-services-js";
+import { Blob } from "buffer";
+import axios from "axios";
 
 async function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Constructs a FormData object for an object with photos.
+ *
+ * @param {Object} object - The object data.
+ * @param {Array<File|Blob>} photos - An array of File or Blob objects.
+ * @param prefix
+ * @param formData
+ * @returns {FormData}
+ */
+function constructFormData(object, photos, prefix = "", formData = new FormData()) {
+    for (const key in object) {
+        if (typeof object[key] === 'object' && object[key] !== null) {
+            // Recursively process nested objects.
+            constructFormData(object[key], [], `${prefix}${key}.`, formData);
+        } else {
+            // Use the prefix to maintain the nesting in the key.
+            formData.append(`${prefix}${key}`, object[key]);
+        }
+    }
+
+    // Append each photo under the "pictures" key.
+    // If you have multiple photos, use the same key name so Spring maps them as an array.
+    for (const photo of photos) {
+        let fileToAppend = photo;
+
+        // If photo is a Buffer, convert it to a Blob.
+        if (Buffer.isBuffer(photo)) {
+            // You may need to adjust the MIME type if it isn't a JPEG.
+            fileToAppend = new Blob([photo], { type: "image/jpeg" });
+        }
+
+        // Append the photo. The third parameter is the filename.
+        formData.append("pictures", fileToAppend, "photo.jpg");
+    }
+
+    return formData;
 }
 
 async function processRequest(client, key, geocode, type, sleepMillis = 2000) {
@@ -53,7 +93,31 @@ async function processRequest(client, key, geocode, type, sleepMillis = 2000) {
             // Extract the Buffer data from each response.
             const photos = photoResponses.map((response) => response.data);
 
-            console.log(places, photos);
+            // Construct form data
+            const formData = constructFormData({
+                name: place.name,
+                description: description[0].toUpperCase() + description.slice(1),
+                categoryId: type ?? place.types.at(0),
+                rating: place.rating ?? 0,
+                location: {
+                    address: address.join(", "),
+                    city,
+                    country: "Ukraine", // for now
+                    coordinate: {
+                        latitude: place.geometry.location.lat,
+                        longitude: place.geometry.location.lng,
+                    }
+                }
+            }, photos);
+
+            // Send request to the backend
+            await axios.postForm(
+                "http://localhost:8080/api/places",
+                formData,
+                {
+                    timeout: 2 * 60 * 1000, // 2 minutes
+                }
+            ).then(({data}) => console.log(data));
         }
 
         next_page_token = data.next_page_token;
