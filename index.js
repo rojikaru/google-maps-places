@@ -1,5 +1,5 @@
-import { Client } from "@googlemaps/google-maps-services-js";
-import { Blob } from "buffer";
+import {Client} from "@googlemaps/google-maps-services-js";
+import {Blob} from "buffer";
 import axios from "axios";
 
 async function sleep(ms) {
@@ -34,7 +34,7 @@ function constructFormData(object, photos, prefix = "", formData = new FormData(
         // If photo is a Buffer, convert it to a Blob.
         if (Buffer.isBuffer(photo)) {
             // You may need to adjust the MIME type if it isn't a JPEG.
-            fileToAppend = new Blob([photo], { type: "image/jpeg" });
+            fileToAppend = new Blob([photo], {type: "image/jpeg"});
         }
 
         // Append the photo. The third parameter is the filename.
@@ -44,7 +44,15 @@ function constructFormData(object, photos, prefix = "", formData = new FormData(
     return formData;
 }
 
-async function processRequest(client, key, geocode, type, sleepMillis = 2000) {
+async function processRequest(client, key, geocode, type, backendUrl = null, sleepMillis = 2000) {
+    const backendClient = backendUrl ? axios.create({
+        timeout: 2 * 60 * 1000, // 2 minutes
+        baseURL: backendUrl,
+    }) : null;
+    if (!backendClient) {
+        console.log("No backend URL specified. Skipping the request.");
+    }
+
     let next_page_token = null;
     do {
         await sleep(sleepMillis); // Sleep 2 seconds to avoid OVER_QUERY_LIMIT
@@ -111,13 +119,13 @@ async function processRequest(client, key, geocode, type, sleepMillis = 2000) {
             }, photos);
 
             // Send request to the backend
-            await axios.postForm(
-                "http://localhost:8080/api/places",
-                formData,
-                {
-                    timeout: 2 * 60 * 1000, // 2 minutes
-                }
-            ).then(({data}) => console.log(data));
+            if (!backendClient) {
+                console.log(formData);
+                continue;
+            }
+
+            const { data } = await backendClient.postForm("places", formData);
+            console.log("Response from the backend:", data);
         }
 
         next_page_token = data.next_page_token;
@@ -126,6 +134,7 @@ async function processRequest(client, key, geocode, type, sleepMillis = 2000) {
 
 async function main() {
     const key = process.env.GOOGLE_MAPS_API_KEY;
+    const backendUrl = process.env.BACKEND_URL;
     const geocode = "49.84192168117031, 24.03155221956153"; // Lviv, Ukraine
 
     // amusement places
@@ -153,7 +162,7 @@ async function main() {
     const client = new Client();
 
     for (const type of types) {
-        await processRequest(client, key, geocode, type);
+        await processRequest(client, key, geocode, type, backendUrl);
     }
 }
 
